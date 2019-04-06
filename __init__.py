@@ -12,12 +12,19 @@ import bpy, bmesh, math
 import mathutils, random
 from mathutils import Vector
 
-def bisect_lower_bound(key_index, a, x, low, high):
+def bisectLowerBound(key_index, a, x, low, high):
     while low < high:
         mid = (low+high)//2
         if a[mid][key_index] < x: low = mid+1
         else: high = mid
     return low
+
+def copyAttributes(dst, src):
+    for attribute in dir(src):
+        try:
+            setattr(dst, attribute, getattr(src, attribute))
+        except:
+            pass
 
 class GenerateParticleHair(bpy.types.Operator):
     bl_idname = 'particle.generate_particle_hair'
@@ -39,6 +46,7 @@ class GenerateParticleHair(bpy.types.Operator):
     def execute(self, context):
         dst_obj = context.object
         inverse_transform = dst_obj.matrix_world.inverted()
+        tmp_objs = []
         strands = []
         stats = {
             'hair_count': 0,
@@ -46,9 +54,45 @@ class GenerateParticleHair(bpy.types.Operator):
         }
         dst_obj.select = False
         for src_obj in context.selected_objects:
-            if src_obj.type != 'MESH':
+            if src_obj.type == 'CURVE' or src_obj.type == 'SURFACE':
+                indices = []
+                vertex_index = 0
+                if src_obj.type == 'CURVE':
+                    for spline in src_obj.data.splines:
+                        if spline.type == 'BEZIER':
+                            indices.append((vertex_index, 1, 1))
+                            vertex_index += (spline.resolution_u*(spline.point_count_u-1)+1)*2
+                elif src_obj.type == 'SURFACE':
+                    for spline in src_obj.data.splines:
+                        indices.append((vertex_index, spline.resolution_u*spline.point_count_u-1, spline.resolution_v*spline.point_count_v))
+                        vertex_index += (spline.resolution_u*spline.point_count_u)*(spline.resolution_v*spline.point_count_v)
+                bpy.ops.object.select_all(action='DESELECT')
+                src_modifiers = []
+                for src_modifier in src_obj.modifiers.values():
+                    if src_modifier.show_viewport:
+                        src_modifiers.append(src_modifier)
+                        src_modifier.show_viewport = False
+                src_obj.select = True
+                bpy.context.scene.objects.active = src_obj
+                bpy.ops.object.convert(target='MESH', keep_original=True)
+                src_obj.hide = True
+                src_obj = context.object
+                tmp_objs.append(src_obj)
+                for src_modifier in src_modifiers:
+                    dst_modifier = src_obj.modifiers.new(name=src_modifier.name, type=src_modifier.type)
+                    copyAttributes(dst_modifier, src_modifier)
+                    dst_modifier.show_viewport = True
+                for iterator in indices:
+                    for vertex_index in range(iterator[0], iterator[0]+iterator[1]*iterator[2]+1, iterator[2]):
+                        src_obj.data.vertices[vertex_index].select = True
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.mark_seam(clear=False)
+                bpy.ops.mesh.select_all(action='DESELECT')
+                bpy.ops.object.mode_set(mode='OBJECT')
+            elif src_obj.type == 'MESH':
+                src_obj.hide = True
+            else:
                 continue
-            src_obj.hide = True
             transform = inverse_transform*src_obj.matrix_world
             data = bm = bmesh.new()
             bm.from_object(src_obj, bpy.context.scene, deform=True, render=False, cage=False, face_normals=True)
@@ -79,6 +123,12 @@ class GenerateParticleHair(bpy.types.Operator):
                     stats['hair_count'] += strand_hairs
                     strands.append((strand_hairs, steps))
             bm.free()
+
+        if len(tmp_objs) > 0:
+            for obj in tmp_objs:
+                obj.select = True
+                bpy.data.meshes.remove(obj.data)
+            bpy.ops.object.delete(use_global=True)
 
         if stats['strand_steps'] == None:
             self.report({'WARNING'}, 'Could not find any marked edges')
@@ -118,7 +168,7 @@ class GenerateParticleHair(bpy.types.Operator):
                 length_factor = 1.0-randomgen.random()*self.length_random
                 for step_index in range(0, stats['strand_steps']):
                     length_param = steps[step_index][0]*length_factor
-                    remapped_step_index = bisect_lower_bound(0, steps, length_param, 0, stats['strand_steps'])
+                    remapped_step_index = bisectLowerBound(0, steps, length_param, 0, stats['strand_steps'])
                     step = steps[remapped_step_index]
                     if step_index == 0:
                         position = step[1]
@@ -144,8 +194,9 @@ class GenerateParticleHair(bpy.types.Operator):
 
         bpy.ops.particle.particle_edit_toggle()
         if self.connect:
-            bpy.ops.particle.disconnect_hair(all=True)
-            bpy.ops.particle.connect_hair(all=True)
+            bpy.ops.particle.connect_hair(all=False)
+        else:
+            bpy.ops.particle.disconnect_hair(all=False)
         return {'FINISHED'}
 
 
