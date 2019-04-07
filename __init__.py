@@ -1,11 +1,12 @@
 bl_info = {
-    'name': 'Particle Hair Guides',
+    'name': 'Particle Hair from Guides',
     'author': 'Alexander Meißner',
     'version': (0,0,1),
     'blender': (2,7,9),
-    'location': 'Properties',
     'category': 'Particle',
-    'description': 'Generates hair particles from mesh edges which start at marked seams'
+    'wiki_url': 'https://github.com/lichtso/hair_guides/',
+    'tracker_url': 'https://github.com/lichtso/hair_guides/issues',
+    'description': 'Generates hair particles from meshes (seam edges), bezier curves or nurbs surfaces.'
 }
 
 import bpy, bmesh, math
@@ -26,16 +27,16 @@ def copyAttributes(dst, src):
         except:
             pass
 
-class GenerateParticleHair(bpy.types.Operator):
-    bl_idname = 'particle.generate_particle_hair'
-    bl_label = 'Particle Hair from Mesh'
+class ParticleHairFromGuides(bpy.types.Operator):
+    bl_idname = 'particle.hair_from_guides'
+    bl_label = 'Particle Hair from Guides'
     bl_options = {'REGISTER', 'UNDO'}
-    bl_description = 'Generates hair particles from mesh edges which start at marked seams'
+    bl_description = 'Generates hair particles from meshes (seam edges), bezier curves or nurbs surfaces.'
 
     connect = bpy.props.BoolProperty(name='Connect', description='Connect roots to the emitters surface', default=False)
     spacing = bpy.props.FloatProperty(name='Spacing', unit='LENGTH', description='Average distance between two hairs', min=0.00001, default=1.0)
-    tangent_random = bpy.props.FloatVectorProperty(name='Tangent Random', unit='LENGTH', description='Randomness inside a strand (at root, uniform, towards tip)', min=0.0, default=(0.0, 0.0, 0.0), size=3)
-    normal_random = bpy.props.FloatVectorProperty(name='Normal Random', unit='LENGTH', description='Randomness towards surface normal (at root, uniform, towards tip)', min=0.0, default=(0.0, 0.0, 0.0), size=3)
+    tangent_random = bpy.props.FloatVectorProperty(name='Tangent Random', description='Randomness inside a strand (at root, uniform, towards tip)', min=0.0, default=(0.0, 0.0, 0.0), size=3)
+    normal_random = bpy.props.FloatVectorProperty(name='Normal Random', description='Randomness towards surface normal (at root, uniform, towards tip)', min=0.0, default=(0.0, 0.0, 0.0), size=3)
     length_random = bpy.props.FloatProperty(name='Length Random', description='Variation of hair length', min=0.0, max=1.0, default=0.0)
     random_seed = bpy.props.IntProperty(name='Random Seed', description='Increase to get a different result', min=0, default=0)
 
@@ -79,9 +80,9 @@ class GenerateParticleHair(bpy.types.Operator):
                 src_obj = context.object
                 tmp_objs.append(src_obj)
                 for src_modifier in src_modifiers:
+                    src_modifier.show_viewport = True
                     dst_modifier = src_obj.modifiers.new(name=src_modifier.name, type=src_modifier.type)
                     copyAttributes(dst_modifier, src_modifier)
-                    dst_modifier.show_viewport = True
                 for iterator in indices:
                     for vertex_index in range(iterator[0], iterator[0]+iterator[1]*iterator[2]+1, iterator[2]):
                         src_obj.data.vertices[vertex_index].select = True
@@ -104,6 +105,9 @@ class GenerateParticleHair(bpy.types.Operator):
                     position = (side_A+side_B)*0.5
                     step = (0, position, side_B-side_A, transform*loop.vert.normal)
                     steps = [step]
+                    strand_hairs = max(1, round((side_A-side_B).length/self.spacing))
+                    stats['hair_count'] += strand_hairs
+                    strands.append((strand_hairs, steps))
                     while True:
                         loop = loop.link_loop_next.link_loop_next
                         side_A = transform*loop.vert.co
@@ -119,9 +123,6 @@ class GenerateParticleHair(bpy.types.Operator):
                     elif stats['strand_steps'] != len(steps):
                         self.report({'WARNING'}, 'Some strands have a different number of vertices')
                         return {'CANCELLED'}
-                    strand_hairs = max(1, round((side_A-side_B).length/self.spacing))
-                    stats['hair_count'] += strand_hairs
-                    strands.append((strand_hairs, steps))
             bm.free()
 
         if len(tmp_objs) > 0:
