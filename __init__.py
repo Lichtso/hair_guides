@@ -94,26 +94,26 @@ class ParticleHairFromGuides(bpy.types.Operator):
                 src_obj.hide = True
             else:
                 continue
-            transform = inverse_transform*src_obj.matrix_world
-            data = bm = bmesh.new()
-            bm.from_object(src_obj, bpy.context.scene, deform=True, render=False, cage=False, face_normals=True)
-            for edge in data.edges:
+            mesh = bmesh.new()
+            mesh.from_object(src_obj, bpy.context.scene, deform=True, render=False, cage=False, face_normals=True)
+            mesh.transform(inverse_transform*src_obj.matrix_world)
+            for edge in mesh.edges:
                 if edge.seam and len(edge.link_loops) == 1:
                     loop = edge.link_loops[0]
-                    side_A = transform*loop.edge.other_vert(loop.vert).co
-                    side_B = transform*loop.vert.co
+                    side_A = loop.edge.other_vert(loop.vert).co
+                    side_B = loop.vert.co
                     position = (side_A+side_B)*0.5
-                    step = (0, position, side_B-side_A, transform*loop.vert.normal)
+                    step = (0, position, side_B-side_A, Vector(loop.vert.normal))
                     steps = [step]
                     strand_hairs = max(1, round((side_A-side_B).length/self.spacing))
                     stats['hair_count'] += strand_hairs
                     strands.append((strand_hairs, steps))
                     while True:
                         loop = loop.link_loop_next.link_loop_next
-                        side_A = transform*loop.vert.co
-                        side_B = transform*loop.edge.other_vert(loop.vert).co
+                        side_A = loop.vert.co
+                        side_B = loop.edge.other_vert(loop.vert).co
                         position = (side_A+side_B)*0.5
-                        step = (step[0]+(position-step[1]).length, position, side_B-side_A, transform*loop.vert.normal)
+                        step = (step[0]+(position-step[1]).length, position, side_B-side_A, Vector(loop.vert.normal))
                         steps.append(step)
                         if len(loop.link_loops) != 1:
                             break
@@ -123,7 +123,7 @@ class ParticleHairFromGuides(bpy.types.Operator):
                     elif stats['strand_steps'] != len(steps):
                         self.report({'WARNING'}, 'Some strands have a different number of vertices')
                         return {'CANCELLED'}
-            bm.free()
+            mesh.free()
 
         if len(tmp_objs) > 0:
             for obj in tmp_objs:
