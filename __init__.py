@@ -2,7 +2,7 @@ bl_info = {
     'name': 'Particle Hair from Guides',
     'author': 'Alexander Meißner',
     'version': (0,0,1),
-    'blender': (2,7,9),
+    'blender': (2,80,0),
     'category': 'Particle',
     'wiki_url': 'https://github.com/lichtso/hair_guides/',
     'tracker_url': 'https://github.com/lichtso/hair_guides/issues',
@@ -33,18 +33,19 @@ class ParticleHairFromGuides(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     bl_description = 'Generates hair particles from meshes (seam edges), bezier curves or nurbs surfaces.'
 
-    connect = bpy.props.BoolProperty(name='Connect', description='Connect roots to the emitters surface', default=False)
-    spacing = bpy.props.FloatProperty(name='Spacing', unit='LENGTH', description='Average distance between two hairs', min=0.00001, default=1.0)
-    tangent_random = bpy.props.FloatVectorProperty(name='Tangent Random', description='Randomness inside a strand (at root, uniform, towards tip)', min=0.0, default=(0.0, 0.0, 0.0), size=3)
-    normal_random = bpy.props.FloatVectorProperty(name='Normal Random', description='Randomness towards surface normal (at root, uniform, towards tip)', min=0.0, default=(0.0, 0.0, 0.0), size=3)
-    length_random = bpy.props.FloatProperty(name='Length Random', description='Variation of hair length', min=0.0, max=1.0, default=0.0)
-    random_seed = bpy.props.IntProperty(name='Random Seed', description='Increase to get a different result', min=0, default=0)
+    connect: bpy.props.BoolProperty(name='Connect', description='Connect roots to the emitters surface', default=False)
+    spacing: bpy.props.FloatProperty(name='Spacing', unit='LENGTH', description='Average distance between two hairs', min=0.00001, default=1.0)
+    tangent_random: bpy.props.FloatVectorProperty(name='Tangent Random', description='Randomness inside a strand (at root, uniform, towards tip)', min=0.0, default=(0.0, 0.0, 0.0), size=3)
+    normal_random: bpy.props.FloatVectorProperty(name='Normal Random', description='Randomness towards surface normal (at root, uniform, towards tip)', min=0.0, default=(0.0, 0.0, 0.0), size=3)
+    length_random: bpy.props.FloatProperty(name='Length Random', description='Variation of hair length', min=0.0, max=1.0, default=0.0)
+    random_seed: bpy.props.IntProperty(name='Random Seed', description='Increase to get a different result', min=0, default=0)
 
     @classmethod
     def poll(self, context):
         return (context.mode == 'OBJECT' and context.object.particle_systems.active and context.object.particle_systems.active.settings.type == 'HAIR')
 
     def execute(self, context):
+        depsgraph = bpy.context.evaluated_depsgraph_get()
         dst_obj = context.object
         inverse_transform = dst_obj.matrix_world.inverted()
         tmp_objs = []
@@ -53,7 +54,7 @@ class ParticleHairFromGuides(bpy.types.Operator):
             'hair_count': 0,
             'strand_steps': None
         }
-        dst_obj.select = False
+        dst_obj.select_set(False)
         for src_obj in context.selected_objects:
             if src_obj.type == 'CURVE' or src_obj.type == 'SURFACE':
                 indices = []
@@ -73,10 +74,10 @@ class ParticleHairFromGuides(bpy.types.Operator):
                     if src_modifier.show_viewport:
                         src_modifiers.append(src_modifier)
                         src_modifier.show_viewport = False
-                src_obj.select = True
-                bpy.context.scene.objects.active = src_obj
+                src_obj.select_set(True)
+                bpy.context.view_layer.objects.active = src_obj
                 bpy.ops.object.convert(target='MESH', keep_original=True)
-                src_obj.hide = True
+                src_obj.hide_viewport = True
                 src_obj = context.object
                 tmp_objs.append(src_obj)
                 for src_modifier in src_modifiers:
@@ -85,18 +86,18 @@ class ParticleHairFromGuides(bpy.types.Operator):
                     copyAttributes(dst_modifier, src_modifier)
                 for iterator in indices:
                     for vertex_index in range(iterator[0], iterator[0]+iterator[1]*iterator[2]+1, iterator[2]):
-                        src_obj.data.vertices[vertex_index].select = True
+                        src_obj.data.vertices[vertex_index].select_set(True)
                 bpy.ops.object.mode_set(mode='EDIT')
                 bpy.ops.mesh.mark_seam(clear=False)
                 bpy.ops.mesh.select_all(action='DESELECT')
                 bpy.ops.object.mode_set(mode='OBJECT')
             elif src_obj.type == 'MESH':
-                src_obj.hide = True
+                src_obj.hide_viewport = True
             else:
                 continue
             mesh = bmesh.new()
-            mesh.from_object(src_obj, bpy.context.scene, deform=True, render=False, cage=False, face_normals=True)
-            mesh.transform(inverse_transform*src_obj.matrix_world)
+            mesh.from_object(src_obj, depsgraph, deform=True, cage=False, face_normals=True)
+            mesh.transform(inverse_transform@src_obj.matrix_world)
             for edge in mesh.edges:
                 if edge.seam and len(edge.link_loops) == 1:
                     loop = edge.link_loops[0]
@@ -127,7 +128,7 @@ class ParticleHairFromGuides(bpy.types.Operator):
 
         if len(tmp_objs) > 0:
             for obj in tmp_objs:
-                obj.select = True
+                obj.select_set(True)
                 bpy.data.meshes.remove(obj.data)
             bpy.ops.object.delete(use_global=True)
 
@@ -141,8 +142,8 @@ class ParticleHairFromGuides(bpy.types.Operator):
             self.report({'WARNING'}, 'Trying to create more than 10000 hairs, try to decrease the density')
             return {'CANCELLED'}
 
-        dst_obj.select = True
-        bpy.context.scene.objects.active = dst_obj
+        dst_obj.select_set(True)
+        bpy.context.view_layer.objects.active = dst_obj
         pasy = dst_obj.particle_systems.active
         pamo = None
         for modifier in dst_obj.modifiers:
@@ -153,7 +154,6 @@ class ParticleHairFromGuides(bpy.types.Operator):
         bpy.ops.particle.edited_clear()
         pasy.settings.hair_step = stats['strand_steps']-1
         pasy.settings.count = stats['hair_count']
-        bpy.ops.particle.particle_edit_toggle()
 
         hair_index = 0
         randomgen = random.Random()
@@ -188,24 +188,10 @@ class ParticleHairFromGuides(bpy.types.Operator):
                 pasy.particles[hair_index].location = pasy.particles[hair_index].hair_keys[0].co
                 hair_index += 1
 
-        # Mark particle system as edited
-        bpy.context.scene.tool_settings.particle_edit.tool = 'COMB'
-        bpy.ops.particle.brush_edit(stroke=[{'name': '', 'location': (0, 0, 0), 'mouse': (0, 0), 'pressure': 0, 'size': 0, 'pen_flip': False, 'time': 0, 'is_start': False}])
-        bpy.context.scene.tool_settings.particle_edit.tool = 'NONE'
-
-        bpy.ops.particle.particle_edit_toggle()
         if self.connect:
             bpy.ops.particle.connect_hair(all=False)
         else:
             bpy.ops.particle.disconnect_hair(all=False)
         return {'FINISHED'}
 
-
-def register():
-    bpy.utils.register_module(__name__)
-
-def unregister():
-    bpy.utils.unregister_module(__name__)
-
-if __name__ == '__main__':
-    register()
+register, unregister = bpy.utils.register_classes_factory([ParticleHairFromGuides])
