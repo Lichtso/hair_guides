@@ -87,6 +87,7 @@ class ParticleHairFromGuides(bpy.types.Operator):
                     for vertex_index in range(iterator[0], iterator[0]+iterator[1]*iterator[2]+1, iterator[2]):
                         src_obj.data.vertices[vertex_index].select = True
                 bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_mode(type='VERT')
                 bpy.ops.mesh.mark_seam(clear=False)
                 bpy.ops.mesh.select_all(action='DESELECT')
                 bpy.ops.object.mode_set(mode='OBJECT')
