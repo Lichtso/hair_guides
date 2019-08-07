@@ -33,7 +33,6 @@ class ParticleHairFromGuides(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     bl_description = 'Generates hair particles from meshes (seam edges), bezier curves or nurbs surfaces.'
 
-    connect: bpy.props.BoolProperty(name='Connect', description='Connect roots to the emitters surface', default=False)
     spacing: bpy.props.FloatProperty(name='Spacing', unit='LENGTH', description='Average distance between two hairs', min=0.00001, default=1.0)
     tangent_random: bpy.props.FloatVectorProperty(name='Tangent Random', description='Randomness inside a strand (at root, uniform, towards tip)', min=0.0, default=(0.0, 0.0, 0.0), size=3)
     normal_random: bpy.props.FloatVectorProperty(name='Normal Random', description='Randomness towards surface normal (at root, uniform, towards tip)', min=0.0, default=(0.0, 0.0, 0.0), size=3)
@@ -88,6 +87,7 @@ class ParticleHairFromGuides(bpy.types.Operator):
                     for vertex_index in range(iterator[0], iterator[0]+iterator[1]*iterator[2]+1, iterator[2]):
                         src_obj.data.vertices[vertex_index].select_set(True)
                 bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_mode(type='VERT')
                 bpy.ops.mesh.mark_seam(clear=False)
                 bpy.ops.mesh.select_all(action='DESELECT')
                 bpy.ops.object.mode_set(mode='OBJECT')
@@ -155,6 +155,15 @@ class ParticleHairFromGuides(bpy.types.Operator):
         pasy.settings.hair_step = stats['strand_steps']-1
         pasy.settings.count = stats['hair_count']
 
+        bpy.ops.particle.particle_edit_toggle()
+        bpy.context.scene.tool_settings.particle_edit.tool = 'COMB'
+        bpy.ops.particle.brush_edit(stroke=[{'name': '', 'location': (0, 0, 0), 'mouse': (0, 0), 'pressure': 0, 'size': 0, 'pen_flip': False, 'time': 0, 'is_start': False}])
+        bpy.ops.particle.particle_edit_toggle()
+
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        dst_obj = dst_obj.evaluated_get(depsgraph)
+        pasy = dst_obj.particle_systems.active
+
         hair_index = 0
         randomgen = random.Random()
         randomgen.seed(self.random_seed)
@@ -188,10 +197,8 @@ class ParticleHairFromGuides(bpy.types.Operator):
                 pasy.particles[hair_index].location = pasy.particles[hair_index].hair_keys[0].co
                 hair_index += 1
 
-        if self.connect:
-            bpy.ops.particle.connect_hair(all=False)
-        else:
-            bpy.ops.particle.disconnect_hair(all=False)
+        bpy.ops.particle.particle_edit_toggle()
+        bpy.ops.particle.particle_edit_toggle()
         return {'FINISHED'}
 
 register, unregister = bpy.utils.register_classes_factory([ParticleHairFromGuides])
