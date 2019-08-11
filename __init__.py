@@ -39,11 +39,19 @@ class ParticleHairFromGuides(bpy.types.Operator):
     length_random: bpy.props.FloatProperty(name='Length Random', description='Variation of hair length', min=0.0, max=1.0, default=0.0)
     random_seed: bpy.props.IntProperty(name='Random Seed', description='Increase to get a different result', min=0, default=0)
 
-    @classmethod
-    def poll(self, context):
-        return (context.mode == 'OBJECT' and context.object.particle_systems.active and context.object.particle_systems.active.settings.type == 'HAIR')
-
     def execute(self, context):
+        if context.mode != 'OBJECT' :
+            self.report({'WARNING'}, 'Not in object mode')
+            return {'CANCELLED'}
+        if not context.object:
+            self.report({'WARNING'}, 'No target selected as active')
+            return {'CANCELLED'}
+        if not context.object.particle_systems.active:
+            self.report({'WARNING'}, 'Target has no active particle system')
+            return {'CANCELLED'}
+        if context.object.particle_systems.active.settings.type != 'HAIR':
+            self.report({'WARNING'}, 'The targets active particle system is not of type "hair"')
+            return {'CANCELLED'}
         depsgraph = bpy.context.evaluated_depsgraph_get()
         dst_obj = context.object
         inverse_transform = dst_obj.matrix_world.inverted()
@@ -54,6 +62,9 @@ class ParticleHairFromGuides(bpy.types.Operator):
             'strand_steps': None
         }
         dst_obj.select_set(False)
+        if len(context.selected_objects) == 0:
+            self.report({'WARNING'}, 'No source objects selected')
+            return {'CANCELLED'}
         for src_obj in context.selected_objects:
             if src_obj.type == 'CURVE' or src_obj.type == 'SURFACE':
                 indices = []
