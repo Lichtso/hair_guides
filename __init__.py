@@ -11,6 +11,7 @@ bl_info = {
 
 import bpy, bmesh, math
 import mathutils, random
+from bpy_extras import mesh_utils
 from mathutils import Vector
 
 def bisectLowerBound(key_index, a, x, low, high):
@@ -27,6 +28,44 @@ def copyAttributes(dst, src):
         except:
             pass
 
+def validateContext(self, context):
+    if context.mode != 'OBJECT':
+        self.report({'WARNING'}, 'Not in object mode')
+        return False
+    if not context.object:
+        self.report({'WARNING'}, 'No target selected as active')
+        return False
+    if not context.object.particle_systems.active:
+        self.report({'WARNING'}, 'Target has no active particle system')
+        return False
+    if context.object.particle_systems.active.settings.type != 'HAIR':
+        self.report({'WARNING'}, 'The targets active particle system is not of type "hair"')
+        return False
+    return True
+
+def getParticleSystem(obj):
+    pasy = obj.particle_systems.active
+    pamo = None
+    for modifier in obj.modifiers:
+        if isinstance(modifier, bpy.types.ParticleSystemModifier) and modifier.particle_system == pasy:
+            pamo = modifier
+            break
+    return (pasy, pamo)
+
+def beginParticleHairUpdate(context, obj):
+    bpy.ops.particle.particle_edit_toggle()
+    bpy.context.scene.tool_settings.particle_edit.tool = 'COMB'
+    bpy.ops.particle.brush_edit(stroke=[{'name': '', 'location': (0, 0, 0), 'mouse': (0, 0), 'pressure': 0, 'size': 0, 'pen_flip': False, 'time': 0, 'is_start': False}])
+    bpy.ops.particle.particle_edit_toggle()
+    depsgraph = context.evaluated_depsgraph_get()
+    obj = obj.evaluated_get(depsgraph)
+    pasy = obj.particle_systems.active
+    return (obj, pasy)
+
+def finishParticleHairUpdate():
+    bpy.ops.particle.particle_edit_toggle()
+    bpy.ops.particle.particle_edit_toggle()
+
 class ParticleHairFromGuides(bpy.types.Operator):
     bl_idname = 'particle.hair_from_guides'
     bl_label = 'Particle Hair from Guides'
@@ -40,27 +79,15 @@ class ParticleHairFromGuides(bpy.types.Operator):
     random_seed: bpy.props.IntProperty(name='Random Seed', description='Increase to get a different result', min=0, default=0)
 
     def execute(self, context):
-        if context.mode != 'OBJECT' :
-            self.report({'WARNING'}, 'Not in object mode')
+        if not validateContext(self, context):
             return {'CANCELLED'}
-        if not context.object:
-            self.report({'WARNING'}, 'No target selected as active')
-            return {'CANCELLED'}
-        if not context.object.particle_systems.active:
-            self.report({'WARNING'}, 'Target has no active particle system')
-            return {'CANCELLED'}
-        if context.object.particle_systems.active.settings.type != 'HAIR':
-            self.report({'WARNING'}, 'The targets active particle system is not of type "hair"')
-            return {'CANCELLED'}
-        depsgraph = bpy.context.evaluated_depsgraph_get()
+        depsgraph = context.evaluated_depsgraph_get()
         dst_obj = context.object
         inverse_transform = dst_obj.matrix_world.inverted()
         tmp_objs = []
         strands = []
-        stats = {
-            'hair_count': 0,
-            'strand_steps': None
-        }
+        hair_count = 0
+        hair_steps = None
         dst_obj.select_set(False)
         if len(context.selected_objects) == 0:
             self.report({'WARNING'}, 'No source objects selected')
@@ -118,7 +145,7 @@ class ParticleHairFromGuides(bpy.types.Operator):
                     step = (0, position, side_B-side_A, Vector(loop.vert.normal))
                     steps = [step]
                     strand_hairs = max(1, round((side_A-side_B).length/self.spacing))
-                    stats['hair_count'] += strand_hairs
+                    hair_count += strand_hairs
                     strands.append((strand_hairs, steps))
                     while True:
                         loop = loop.link_loop_next.link_loop_next
@@ -130,9 +157,9 @@ class ParticleHairFromGuides(bpy.types.Operator):
                         if len(loop.link_loops) != 1:
                             break
                         loop = loop.link_loops[0]
-                    if stats['strand_steps'] == None:
-                        stats['strand_steps'] = len(steps)
-                    elif stats['strand_steps'] != len(steps):
+                    if hair_steps == None:
+                        hair_steps = len(steps)
+                    elif hair_steps != len(steps):
                         self.report({'WARNING'}, 'Some strands have a different number of vertices')
                         return {'CANCELLED'}
             mesh.free()
@@ -143,37 +170,24 @@ class ParticleHairFromGuides(bpy.types.Operator):
                 bpy.data.meshes.remove(obj.data)
             bpy.ops.object.delete(use_global=True)
 
-        if stats['strand_steps'] == None:
+        if hair_steps == None:
             self.report({'WARNING'}, 'Could not find any marked edges')
             return {'CANCELLED'}
-        if stats['strand_steps'] < 3:
+        if hair_steps < 3:
             self.report({'WARNING'}, 'Strands must be at least two faces long')
             return {'CANCELLED'}
-        if stats['hair_count'] > 10000:
+        if hair_count > 10000:
             self.report({'WARNING'}, 'Trying to create more than 10000 hairs, try to decrease the density')
             return {'CANCELLED'}
 
         dst_obj.select_set(True)
         bpy.context.view_layer.objects.active = dst_obj
-        pasy = dst_obj.particle_systems.active
-        pamo = None
-        for modifier in dst_obj.modifiers:
-            if isinstance(modifier, bpy.types.ParticleSystemModifier) and modifier.particle_system == pasy:
-                pamo = modifier
-                break
+        pasy, pamo = getParticleSystem(dst_obj)
         pamo.show_viewport = True
         bpy.ops.particle.edited_clear()
-        pasy.settings.hair_step = stats['strand_steps']-1
-        pasy.settings.count = stats['hair_count']
-
-        bpy.ops.particle.particle_edit_toggle()
-        bpy.context.scene.tool_settings.particle_edit.tool = 'COMB'
-        bpy.ops.particle.brush_edit(stroke=[{'name': '', 'location': (0, 0, 0), 'mouse': (0, 0), 'pressure': 0, 'size': 0, 'pen_flip': False, 'time': 0, 'is_start': False}])
-        bpy.ops.particle.particle_edit_toggle()
-
-        depsgraph = bpy.context.evaluated_depsgraph_get()
-        dst_obj = dst_obj.evaluated_get(depsgraph)
-        pasy = dst_obj.particle_systems.active
+        pasy.settings.hair_step = hair_steps-1
+        pasy.settings.count = hair_count
+        dst_obj, pasy = beginParticleHairUpdate(context, dst_obj)
 
         hair_index = 0
         randomgen = random.Random()
@@ -187,9 +201,9 @@ class ParticleHairFromGuides(bpy.types.Operator):
                 normal_random_at_root = (randomgen.random()-0.5)*self.normal_random[0]
                 normal_random_towards_tip = (randomgen.random()-0.5)*self.normal_random[2]
                 length_factor = 1.0-randomgen.random()*self.length_random
-                for step_index in range(0, stats['strand_steps']):
+                for step_index in range(0, hair_steps):
                     length_param = steps[step_index][0]*length_factor
-                    remapped_step_index = bisectLowerBound(0, steps, length_param, 0, stats['strand_steps'])
+                    remapped_step_index = bisectLowerBound(0, steps, length_param, 0, hair_steps)
                     step = steps[remapped_step_index]
                     if step_index == 0:
                         position = step[1]
@@ -208,8 +222,112 @@ class ParticleHairFromGuides(bpy.types.Operator):
                 pasy.particles[hair_index].location = pasy.particles[hair_index].hair_keys[0].co
                 hair_index += 1
 
-        bpy.ops.particle.particle_edit_toggle()
-        bpy.ops.particle.particle_edit_toggle()
+        finishParticleHairUpdate()
         return {'FINISHED'}
 
-register, unregister = bpy.utils.register_classes_factory([ParticleHairFromGuides])
+class SaveParticleHairToMesh(bpy.types.Operator):
+    bl_idname = 'particle.save_hair_to_mesh'
+    bl_label = 'Save Particle Hair to Mesh'
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = 'Creates a mesh from active particle hair system'
+
+    def execute(self, context):
+        if not validateContext(self, context):
+            return {'CANCELLED'}
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        src_obj = context.object.evaluated_get(depsgraph)
+        pasy, pamo = getParticleSystem(src_obj)
+        steps = pasy.settings.hair_step+1
+
+        dst_name = pasy.name
+        mesh_data = bpy.data.meshes.new(name=dst_name)
+        dst_obj = bpy.data.objects.new(dst_name, mesh_data)
+        dst_obj.matrix_world = src_obj.matrix_world
+        bpy.context.scene.collection.objects.link(dst_obj)
+        bpy.ops.object.select_all(action='DESELECT')
+        dst_obj.select_set(True)
+        bpy.context.view_layer.objects.active = dst_obj
+
+        vertices = []
+        edges = []
+        faces = []
+        for hair_index in range(0, pasy.settings.count):
+            hair = pasy.particles[hair_index]
+            for step_index in range(0, steps):
+                if step_index > 0:
+                    edges.append((len(vertices)-1, len(vertices)))
+                vertices.append(hair.hair_keys[step_index].co)
+        mesh_data.from_pydata(vertices, edges, faces)
+        mesh_data.update()
+
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_mode(type='VERT')
+        bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.object.mode_set(mode='OBJECT')
+        for hair_index in range(0, pasy.settings.count):
+            mesh_data.vertices[hair_index*steps].select = True
+
+        return {'FINISHED'}
+
+class RestoreParticleHairFromMesh(bpy.types.Operator):
+    bl_idname = 'particle.restore_hair_from_mesh'
+    bl_label = 'Restore Particle Hair from Mesh'
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = 'Copies vertices of a mesh to active particle hair system'
+
+    def execute(self, context):
+        if not validateContext(self, context):
+            return {'CANCELLED'}
+
+        dst_obj = context.object
+        dst_obj.select_set(False)
+        if len(context.selected_objects) == 0:
+            self.report({'WARNING'}, 'No source objects selected')
+            return {'CANCELLED'}
+
+        hair_steps = None
+        hair_count = 0
+        for src_obj in context.selected_objects:
+            if src_obj.type != 'MESH':
+                continue
+            loops = mesh_utils.edge_loops_from_edges(src_obj.data)
+            hair_count += len(loops)
+            for loop in loops:
+                begin_is_selected = src_obj.data.vertices[loop[0]].select
+                end_is_selected = src_obj.data.vertices[loop[-1]].select
+                if begin_is_selected == end_is_selected:
+                    self.report({'WARNING'}, 'The hair roots must be selected and the tips deselected')
+                    return {'CANCELLED'}
+                if hair_steps == None:
+                    hair_steps = len(loop)
+                elif hair_steps != len(loop):
+                    self.report({'WARNING'}, 'Some hairs have a different number of vertices')
+                    return {'CANCELLED'}
+
+        pasy, pamo = getParticleSystem(dst_obj)
+        pasy.settings.use_modifier_stack = False # Work around for: https://developer.blender.org/T54488
+        pamo.show_viewport = True
+        bpy.ops.particle.edited_clear()
+        pasy.settings.hair_step = hair_steps-1
+        pasy.settings.count = hair_count
+        dst_obj, pasy = beginParticleHairUpdate(context, dst_obj)
+
+        hair_index = 0
+        for src_obj in context.selected_objects:
+            if src_obj.type != 'MESH':
+                continue
+            loops = mesh_utils.edge_loops_from_edges(src_obj.data)
+            for loop in loops:
+                if not src_obj.data.vertices[loop[0]].select:
+                    loop = list(reversed(loop))
+                hair = pasy.particles[hair_index]
+                hair_index += 1
+                for step_index in range(0, hair_steps):
+                    hair.hair_keys[step_index].co = src_obj.data.vertices[loop[step_index]].co
+
+        finishParticleHairUpdate()
+        bpy.ops.particle.disconnect_hair()
+        bpy.ops.particle.connect_hair()
+        return {'FINISHED'}
+
+register, unregister = bpy.utils.register_classes_factory([ParticleHairFromGuides, SaveParticleHairToMesh, RestoreParticleHairFromMesh])
