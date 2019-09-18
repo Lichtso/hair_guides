@@ -313,17 +313,19 @@ class RestoreParticleHairFromMesh(bpy.types.Operator):
         dst_obj, pasy = beginParticleHairUpdate(context, dst_obj)
 
         hair_index = 0
+        inverse_transform = dst_obj.matrix_world.inverted()
         for src_obj in context.selected_objects:
             if src_obj.type != 'MESH':
                 continue
             loops = mesh_utils.edge_loops_from_edges(src_obj.data)
+            transform = inverse_transform@src_obj.matrix_world
             for loop in loops:
                 if not src_obj.data.vertices[loop[0]].select:
                     loop = list(reversed(loop))
                 hair = pasy.particles[hair_index]
                 hair_index += 1
                 for step_index in range(0, hair_steps):
-                    hair.hair_keys[step_index].co = src_obj.data.vertices[loop[step_index]].co
+                    hair.hair_keys[step_index].co = transform@src_obj.data.vertices[loop[step_index]].co
 
         finishParticleHairUpdate()
         bpy.ops.particle.disconnect_hair()
