@@ -5,7 +5,7 @@ Please select the git branch according to your Blender version.
 ## Usage
 - 1. Create some strands as source:
   - Mesh: Hair roots will be at the edges marked as seams
-  - Bezier curve: Resolution Preview U must be at least 2, Spline type must be "Bezier" and Handle type must be "Automatic", "Aligned" or "Free" (not "Vector")
+  - Bezier curve: Spline type must be "Bezier" and Handle type must be "Automatic", "Aligned" or "Free" (not "Vector")
     - Ribbons by setting Extrude > 0
     - Bundles by setting Bevel Depth > 0
   - Nurbs surface: Hair roots will be at an orange edge and be parallel to the magenta edges

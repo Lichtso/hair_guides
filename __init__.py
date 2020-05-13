@@ -72,11 +72,14 @@ class ParticleHairFromGuides(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     bl_description = 'Generates hair particles from meshes (seam edges), bezier curves or nurbs surfaces.'
 
-    spacing: bpy.props.FloatProperty(name='Spacing', unit='LENGTH', description='Average distance between two hairs', min=0.00001, default=1.0)
-    tangent_random: bpy.props.FloatVectorProperty(name='Tangent Random', description='Randomness inside a strand (at root, uniform, towards tip)', min=0.0, default=(0.0, 0.0, 0.0), size=3)
-    normal_random: bpy.props.FloatVectorProperty(name='Normal Random', description='Randomness towards surface normal (at root, uniform, towards tip)', min=0.0, default=(0.0, 0.0, 0.0), size=3)
-    length_random: bpy.props.FloatProperty(name='Length Random', description='Variation of hair length', min=0.0, max=1.0, default=0.0)
-    random_seed: bpy.props.IntProperty(name='Random Seed', description='Increase to get a different result', min=0, default=0)
+    spacing: bpy.props.FloatProperty(name='Spacing', unit='LENGTH', description='Average distance between two hairs. Decease this to increase density.', min=0.00001, default=1.0)
+    length_rand: bpy.props.FloatProperty(name='Length Rand', description='Randomness of hair length', min=0.0, max=1.0, default=0.0)
+    rand_at_root: bpy.props.FloatVectorProperty(name='Rand at Root', description='Randomness at the roots (tangent, normal)', min=0.0, default=(0.0, 0.0), size=2)
+    uniform_rand: bpy.props.FloatVectorProperty(name='Uniform Rand', description='Randomness inside the entire strand (tangent, normal)', min=0.0, default=(0.0, 0.0), size=2)
+    rand_towards_tip: bpy.props.FloatVectorProperty(name='Rand towards Tip', description='Randomness increasing towards the tip (tangent, normal)', min=0.0, default=(0.0, 0.0), size=2)
+    uniform_bias: bpy.props.FloatVectorProperty(name='Uniform Bias', description='Bias at the roots (tangent, normal)', default=(0.0, 0.0), size=2)
+    bias_towards_tip: bpy.props.FloatVectorProperty(name='Bias towards Tip', description='Bias increasing towards the tip (tangent, normal)', default=(0.0, 0.0), size=2)
+    rand_seed: bpy.props.IntProperty(name='Rand Seed', description='Increase to get a different result', min=0, default=0)
 
     def execute(self, context):
         if not validateContext(self, context):
@@ -102,9 +105,6 @@ class ParticleHairFromGuides(bpy.types.Operator):
                         return {'CANCELLED'}
                     resolution_u = 2 if src_obj.data.bevel_depth == 0.0 else (4 if src_obj.data.extrude == 0.0 else 3)+2*src_obj.data.bevel_resolution
                     for spline in src_obj.data.splines:
-                        if spline.resolution_u < 2:
-                            self.report({'WARNING'}, 'Curve resolution U must be at least 2')
-                            return {'CANCELLED'}
                         if spline.type != 'BEZIER':
                             self.report({'WARNING'}, 'Curve spline type must be Bezier')
                             return {'CANCELLED'}
@@ -165,7 +165,7 @@ class ParticleHairFromGuides(bpy.types.Operator):
                     side_A = loop.edge.other_vert(loop.vert).co
                     side_B = loop.vert.co
                     position = (side_A+side_B)*0.5
-                    step = (0, position, side_B-side_A, Vector(loop.vert.normal))
+                    step = (0, position, side_B-side_A, Vector(loop.face.normal))
                     steps = [step]
                     strand_hairs = max(1, round((side_A-side_B).length/self.spacing))
                     hair_count += strand_hairs
@@ -175,7 +175,7 @@ class ParticleHairFromGuides(bpy.types.Operator):
                         side_A = loop.vert.co
                         side_B = loop.edge.other_vert(loop.vert).co
                         position = (side_A+side_B)*0.5
-                        step = (step[0]+(position-step[1]).length, position, side_B-side_A, Vector(loop.vert.normal))
+                        step = (step[0]+(position-step[1]).length, position, side_B-side_A, Vector(loop.face.normal))
                         steps.append(step)
                         if len(loop.link_loops) != 1:
                             break
@@ -212,16 +212,16 @@ class ParticleHairFromGuides(bpy.types.Operator):
 
         hair_index = 0
         randomgen = random.Random()
-        randomgen.seed(self.random_seed)
+        randomgen.seed(self.rand_seed)
         for strand in strands:
             strand_hairs = strand[0]
             steps = strand[1]
             for index_in_strand in range(0, strand_hairs):
-                tangent_random_at_root = (randomgen.random()-0.5)*self.tangent_random[0]
-                tangent_random_towards_tip = (randomgen.random()-0.5)*self.tangent_random[2]
-                normal_random_at_root = (randomgen.random()-0.5)*self.normal_random[0]
-                normal_random_towards_tip = (randomgen.random()-0.5)*self.normal_random[2]
-                length_factor = 1.0-randomgen.random()*self.length_random
+                tangent_offset_at_root = self.uniform_bias[0]+(randomgen.random()-0.5)*self.rand_at_root[0]
+                normal_offset_at_root = self.uniform_bias[1]+(randomgen.random()-0.5)*self.rand_at_root[1]
+                tangent_rand_towards_tip = self.bias_towards_tip[0]+(randomgen.random()-0.5)*self.rand_towards_tip[0]
+                normal_rand_towards_tip = self.bias_towards_tip[1]+(randomgen.random()-0.5)*self.rand_towards_tip[1]
+                length_factor = 1.0-randomgen.random()*self.length_rand
                 for step_index in range(0, hair_steps):
                     length_param = steps[step_index][0]*length_factor
                     remapped_step_index = bisectLowerBound(0, steps, length_param, 0, hair_steps)
@@ -238,8 +238,8 @@ class ParticleHairFromGuides(bpy.types.Operator):
                         normal = prev_step[3]+(step[3]-prev_step[3])*coaxial_param
                     vertex = pasy.particles[hair_index].hair_keys[step_index]
                     vertex.co = position+tangent*((index_in_strand+0.5)/strand_hairs-0.5)
-                    vertex.co += tangent.normalized()*(tangent_random_at_root+(randomgen.random()-0.5)*self.tangent_random[1]+tangent_random_towards_tip*length_param)
-                    vertex.co += normal.normalized()*(normal_random_at_root+(randomgen.random()-0.5)*self.normal_random[1]+normal_random_towards_tip*length_param)
+                    vertex.co += tangent.normalized()*(tangent_offset_at_root+(randomgen.random()-0.5)*self.uniform_rand[0]+tangent_rand_towards_tip*length_param)
+                    vertex.co += normal.normalized()*(normal_offset_at_root+(randomgen.random()-0.5)*self.uniform_rand[1]+normal_rand_towards_tip*length_param)
                 pasy.particles[hair_index].location = pasy.particles[hair_index].hair_keys[0].co
                 hair_index += 1
 
