@@ -97,14 +97,37 @@ class ParticleHairFromGuides(bpy.types.Operator):
                 indices = []
                 vertex_index = 0
                 if src_obj.type == 'CURVE':
+                    if src_obj.data.bevel_depth == 0.0 and src_obj.data.extrude == 0.0:
+                        self.report({'WARNING'}, 'Curve must have extrude or bevel depth')
+                        return {'CANCELLED'}
+                    resolution_u = 2 if src_obj.data.bevel_depth == 0.0 else (4 if src_obj.data.extrude == 0.0 else 3)+2*src_obj.data.bevel_resolution
                     for spline in src_obj.data.splines:
-                        if spline.type == 'BEZIER':
+                        if spline.resolution_u < 2:
+                            self.report({'WARNING'}, 'Curve resolution U must be at least 2')
+                            return {'CANCELLED'}
+                        if spline.type != 'BEZIER':
+                            self.report({'WARNING'}, 'Curve spline type must be Bezier')
+                            return {'CANCELLED'}
+                        for bezier_point in spline.bezier_points:
+                            if bezier_point.handle_left_type == 'VECTOR' or bezier_point.handle_right_type == 'VECTOR':
+                                self.report({'WARNING'}, 'Curve handle type must not be Vector')
+                                return {'CANCELLED'}
+                        resolution_v = (spline.resolution_u*(spline.point_count_u-1)+1)
+                        indices.append((vertex_index, resolution_u-1, 1))
+                        vertex_index += resolution_u*resolution_v
+                        if src_obj.data.bevel_depth != 0.0 and src_obj.data.extrude != 0.0:
                             indices.append((vertex_index, 1, 1))
-                            vertex_index += (spline.resolution_u*(spline.point_count_u-1)+1)*2
+                            vertex_index += 2*resolution_v
+                            indices.append((vertex_index, 1, 1))
+                            vertex_index += 2*resolution_v
+                            indices.append((vertex_index, resolution_u-1, 1))
+                            vertex_index += resolution_u*resolution_v
                 elif src_obj.type == 'SURFACE':
                     for spline in src_obj.data.splines:
-                        indices.append((vertex_index, spline.resolution_u*spline.point_count_u-1, spline.resolution_v*spline.point_count_v))
-                        vertex_index += (spline.resolution_u*spline.point_count_u)*(spline.resolution_v*spline.point_count_v)
+                        resolution_u = spline.resolution_u*spline.point_count_u
+                        resolution_v = spline.resolution_v*spline.point_count_v
+                        indices.append((vertex_index, resolution_u-1, resolution_v))
+                        vertex_index += resolution_u*resolution_v
                 bpy.ops.object.select_all(action='DESELECT')
                 src_modifiers = []
                 for src_modifier in src_obj.modifiers.values():
@@ -166,9 +189,7 @@ class ParticleHairFromGuides(bpy.types.Operator):
 
         if len(tmp_objs) > 0:
             for obj in tmp_objs:
-                obj.select_set(True)
                 bpy.data.meshes.remove(obj.data)
-            bpy.ops.object.delete(use_global=True)
 
         if hair_steps == None:
             self.report({'WARNING'}, 'Could not find any marked edges')
