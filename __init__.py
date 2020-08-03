@@ -272,7 +272,7 @@ class SaveParticleHairToMesh(bpy.types.Operator):
         vertices = []
         edges = []
         faces = []
-        for hair_index in range(0, pasy.settings.count):
+        for hair_index in range(0, len(pasy.particles)):
             hair = pasy.particles[hair_index]
             for step_index in range(0, steps):
                 if step_index > 0:
@@ -285,7 +285,7 @@ class SaveParticleHairToMesh(bpy.types.Operator):
         bpy.ops.mesh.select_mode(type='VERT')
         bpy.ops.mesh.select_all(action='DESELECT')
         bpy.ops.object.mode_set(mode='OBJECT')
-        for hair_index in range(0, pasy.settings.count):
+        for hair_index in range(0, len(pasy.particles)):
             mesh_data.vertices[hair_index*steps].select = True
 
         return {'FINISHED'}
