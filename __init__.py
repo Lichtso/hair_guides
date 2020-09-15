@@ -2,7 +2,7 @@ bl_info = {
     'name': 'Particle Hair from Guides',
     'author': 'Alexander Meißner',
     'version': (0,0,1),
-    'blender': (2,83,0),
+    'blender': (2,90,0),
     'category': 'Particle',
     'wiki_url': 'https://github.com/lichtso/hair_guides/',
     'tracker_url': 'https://github.com/lichtso/hair_guides/issues',
@@ -353,4 +353,27 @@ class RestoreParticleHairFromMesh(bpy.types.Operator):
         finishParticleHairUpdate()
         return {'FINISHED'}
 
-register, unregister = bpy.utils.register_classes_factory([ParticleHairFromGuides, SaveParticleHairToMesh, RestoreParticleHairFromMesh])
+operators = [ParticleHairFromGuides, SaveParticleHairToMesh, RestoreParticleHairFromMesh]
+
+class VIEW3D_MT_object_hair_guides(bpy.types.Menu):
+    bl_label = 'Hair Guides'
+
+    def draw(self, context):
+        for operator in operators:
+            self.layout.operator(operator.bl_idname)
+
+classes = operators+[VIEW3D_MT_object_hair_guides]
+
+def menu_object_hair_guides(self, context):
+    self.layout.separator()
+    self.layout.menu('VIEW3D_MT_object_hair_guides')
+
+def register():
+    for cls in classes:
+        bpy.utils.register_class(cls)
+    bpy.types.VIEW3D_MT_object.append(menu_object_hair_guides)
+
+def unregister():
+    for cls in classes:
+        bpy.utils.unregister_class(cls)
+    bpy.types.VIEW3D_MT_object.remove(menu_object_hair_guides)
