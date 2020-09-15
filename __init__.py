@@ -81,12 +81,13 @@ class ParticleHairFromGuides(bpy.types.Operator):
 
     spacing: bpy.props.FloatProperty(name='Spacing', unit='LENGTH', description='Average distance between two hairs. Decease this to increase density.', min=0.00001, default=1.0)
     length_rand: bpy.props.FloatProperty(name='Length Rand', description='Randomness of hair length', min=0.0, max=1.0, default=0.0)
-    rand_at_root: bpy.props.FloatVectorProperty(name='Rand at Root', description='Randomness at the roots (tangent, normal)', min=0.0, default=(0.0, 0.0), size=2)
-    uniform_rand: bpy.props.FloatVectorProperty(name='Uniform Rand', description='Randomness inside the entire strand (tangent, normal)', min=0.0, default=(0.0, 0.0), size=2)
-    rand_towards_tip: bpy.props.FloatVectorProperty(name='Rand towards Tip', description='Randomness increasing towards the tip (tangent, normal)', min=0.0, default=(0.0, 0.0), size=2)
+    rand_at_root: bpy.props.FloatVectorProperty(name='Rand at Root', description='Randomness at the roots (tangent, normal)', default=(0.0, 0.0), size=2)
+    uniform_rand: bpy.props.FloatVectorProperty(name='Uniform Rand', description='Randomness inside the entire strand (tangent, normal)', default=(0.0, 0.0), size=2)
+    rand_towards_tip: bpy.props.FloatVectorProperty(name='Rand towards Tip', description='Randomness increasing towards the tip (tangent, normal)', default=(0.0, 0.0), size=2)
     uniform_bias: bpy.props.FloatVectorProperty(name='Uniform Bias', description='Bias at the roots (tangent, normal)', default=(0.0, 0.0), size=2)
     bias_towards_tip: bpy.props.FloatVectorProperty(name='Bias towards Tip', description='Bias increasing towards the tip (tangent, normal)', default=(0.0, 0.0), size=2)
-    rand_seed: bpy.props.IntProperty(name='Rand Seed', description='Increase to get a different result', min=0, default=0)
+    couple_root_and_tip: bpy.props.BoolProperty(name='Couple Root & Tip', description='Couples the randomness at the root and the tip', default=False)
+    rand_seed: bpy.props.IntProperty(name='Rand Seed', description='Increase to get a different result', default=0)
 
     def execute(self, context):
         if not validateContext(self, context):
@@ -219,10 +220,15 @@ class ParticleHairFromGuides(bpy.types.Operator):
             strand_hairs = strand[0]
             steps = strand[1]
             for index_in_strand in range(0, strand_hairs):
-                tangent_offset_at_root = self.uniform_bias[0]+(randomgen.random()-0.5)*self.rand_at_root[0]
-                normal_offset_at_root = self.uniform_bias[1]+(randomgen.random()-0.5)*self.rand_at_root[1]
-                tangent_rand_towards_tip = self.bias_towards_tip[0]+(randomgen.random()-0.5)*self.rand_towards_tip[0]
-                normal_rand_towards_tip = self.bias_towards_tip[1]+(randomgen.random()-0.5)*self.rand_towards_tip[1]
+                tangent_rand = randomgen.random()-0.5
+                normal_rand = randomgen.random()-0.5
+                tangent_offset_at_root = self.uniform_bias[0]+tangent_rand*self.rand_at_root[0]
+                normal_offset_at_root = self.uniform_bias[1]+normal_rand*self.rand_at_root[1]
+                if not self.couple_root_and_tip:
+                    tangent_rand = randomgen.random()-0.5
+                    normal_rand = randomgen.random()-0.5
+                tangent_rand_towards_tip = self.bias_towards_tip[0]+tangent_rand*self.rand_towards_tip[0]
+                normal_rand_towards_tip = self.bias_towards_tip[1]+normal_rand*self.rand_towards_tip[1]
                 length_factor = 1.0-randomgen.random()*self.length_rand
                 for step_index in range(0, hair_steps):
                     length_param = steps[step_index][0]*length_factor
