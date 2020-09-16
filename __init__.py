@@ -47,7 +47,7 @@ def getParticleSystem(obj):
     pasy = obj.particle_systems.active
     pamo = None
     for modifier in obj.modifiers:
-        if isinstance(modifier, bpy.types.ParticleSystemModifier) and modifier.particle_system == pasy:
+        if modifier.type == "PARTICLE_SYSTEM" and modifier.particle_system == pasy:
             pamo = modifier
             break
     return (pasy, pamo)
@@ -58,20 +58,15 @@ def beginParticleHairUpdate(context, dst_obj, hair_steps, hair_count):
     bpy.ops.particle.edited_clear()
     pasy.settings.hair_step = hair_steps-1
     pasy.settings.count = hair_count
-    bpy.context.scene.tool_settings.particle_edit.type = 'PARTICLES'
     bpy.ops.object.mode_set(mode='PARTICLE_EDIT')
-    bpy.ops.wm.tool_set_by_id(name='builtin_brush.Comb')
-    bpy.ops.particle.brush_edit(stroke=[{'name': '', 'location': (0, 0, 0), 'mouse': (0, 0), 'pressure': 0, 'size': 0, 'pen_flip': False, 'time': 0, 'is_start': True}])
-    bpy.ops.particle.disconnect_hair()
-    depsgraph = context.evaluated_depsgraph_get()
-    dst_obj = dst_obj.evaluated_get(depsgraph)
-    pasy = dst_obj.particle_systems.active
-    return (dst_obj, pasy)
-
-def finishParticleHairUpdate():
-    bpy.ops.particle.connect_hair()
     bpy.ops.object.mode_set(mode='OBJECT')
-    bpy.ops.particle.disconnect_hair()
+    bpy.ops.particle.connect_hair()
+    depsgraph = context.evaluated_depsgraph_get()
+    pasy, pamo = getParticleSystem(dst_obj)
+    dst_obj_eval = dst_obj.evaluated_get(depsgraph)
+    pamo_eval = dst_obj_eval.modifiers[pamo.name]
+    pasy_eval = pamo_eval.particle_system
+    return (pasy, dst_obj_eval, pamo_eval, pasy_eval)
 
 class ParticleHairFromGuides(bpy.types.Operator):
     bl_idname = 'particle.hair_from_guides'
@@ -211,7 +206,7 @@ class ParticleHairFromGuides(bpy.types.Operator):
 
         dst_obj.select_set(True)
         bpy.context.view_layer.objects.active = dst_obj
-        dst_obj, pasy = beginParticleHairUpdate(context, dst_obj, hair_steps, hair_count)
+        pasy, dst_obj_eval, pamo_eval, pasy_eval = beginParticleHairUpdate(context, dst_obj, hair_steps, hair_count)
 
         hair_index = 0
         randomgen = random.Random()
@@ -244,14 +239,16 @@ class ParticleHairFromGuides(bpy.types.Operator):
                         position = prev_step[1]+(step[1]-prev_step[1])*coaxial_param
                         tangent = prev_step[2]+(step[2]-prev_step[2])*coaxial_param
                         normal = prev_step[3]+(step[3]-prev_step[3])*coaxial_param
-                    vertex = pasy.particles[hair_index].hair_keys[step_index]
-                    vertex.co = position+tangent*((index_in_strand+0.5)/strand_hairs-0.5)
-                    vertex.co += tangent.normalized()*(tangent_offset_at_root+(randomgen.random()-0.5)*self.uniform_rand[0]+tangent_rand_towards_tip*length_param)
-                    vertex.co += normal.normalized()*(normal_offset_at_root+(randomgen.random()-0.5)*self.uniform_rand[1]+normal_rand_towards_tip*length_param)
-                pasy.particles[hair_index].location = pasy.particles[hair_index].hair_keys[0].co
+                    hair_key = pasy.particles[hair_index].hair_keys[step_index]
+                    co = position+tangent*((index_in_strand+0.5)/strand_hairs-0.5)
+                    co += tangent.normalized()*(tangent_offset_at_root+(randomgen.random()-0.5)*self.uniform_rand[0]+tangent_rand_towards_tip*length_param)
+                    co += normal.normalized()*(normal_offset_at_root+(randomgen.random()-0.5)*self.uniform_rand[1]+normal_rand_towards_tip*length_param)
+                    hair_key.co_object_set(dst_obj_eval, pamo_eval, pasy_eval.particles[hair_index], co)
+                    if step_index == 0:
+                        pasy.particles[hair_index].location = co
                 hair_index += 1
 
-        finishParticleHairUpdate()
+        bpy.ops.particle.disconnect_hair()
         return {'FINISHED'}
 
 class SaveParticleHairToMesh(bpy.types.Operator):
@@ -263,9 +260,12 @@ class SaveParticleHairToMesh(bpy.types.Operator):
     def execute(self, context):
         if not validateContext(self, context):
             return {'CANCELLED'}
-        depsgraph = bpy.context.evaluated_depsgraph_get()
-        src_obj = context.object.evaluated_get(depsgraph)
+        src_obj = context.object
+        depsgraph = context.evaluated_depsgraph_get()
         pasy, pamo = getParticleSystem(src_obj)
+        src_obj_eval = src_obj.evaluated_get(depsgraph)
+        pamo_eval = src_obj_eval.modifiers[pamo.name]
+        pasy_eval = pamo_eval.particle_system
         steps = pasy.settings.hair_step+1
 
         dst_name = pasy.name
@@ -279,20 +279,22 @@ class SaveParticleHairToMesh(bpy.types.Operator):
         faces = []
         for hair_index in range(0, len(pasy.particles)):
             hair = pasy.particles[hair_index]
+            hair_eval = pasy_eval.particles[hair_index]
             for step_index in range(0, steps):
                 if step_index > 0:
                     edges.append((len(vertices)-1, len(vertices)))
-                vertices.append(hair.hair_keys[step_index].co)
+                vertices.append(hair.hair_keys[step_index].co_object(src_obj_eval, pamo_eval, hair_eval))
         mesh_data.from_pydata(vertices, edges, faces)
         mesh_data.update()
 
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.select_mode(type='VERT')
-        bpy.ops.mesh.select_all(action='DESELECT')
         bpy.ops.object.mode_set(mode='OBJECT')
         bpy.ops.object.select_all(action='DESELECT')
         dst_obj.select_set(True)
         bpy.context.view_layer.objects.active = dst_obj
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_mode(type='VERT')
+        bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.object.mode_set(mode='OBJECT')
         for hair_index in range(0, len(pasy.particles)):
             mesh_data.vertices[hair_index*steps].select = True
 
@@ -333,7 +335,7 @@ class RestoreParticleHairFromMesh(bpy.types.Operator):
                     self.report({'WARNING'}, 'Some hairs have a different number of vertices')
                     return {'CANCELLED'}
 
-        dst_obj, pasy = beginParticleHairUpdate(context, dst_obj, hair_steps, hair_count)
+        pasy, dst_obj_eval, pamo_eval, pasy_eval = beginParticleHairUpdate(context, dst_obj, hair_steps, hair_count)
 
         hair_index = 0
         inverse_transform = dst_obj.matrix_world.inverted()
@@ -346,11 +348,15 @@ class RestoreParticleHairFromMesh(bpy.types.Operator):
                 if not src_obj.data.vertices[loop[0]].select:
                     loop = list(reversed(loop))
                 hair = pasy.particles[hair_index]
+                hair_eval = pasy_eval.particles[hair_index]
                 hair_index += 1
                 for step_index in range(0, hair_steps):
-                    hair.hair_keys[step_index].co = transform@src_obj.data.vertices[loop[step_index]].co
+                    co = transform@src_obj.data.vertices[loop[step_index]].co
+                    hair.hair_keys[step_index].co_object_set(dst_obj_eval, pamo_eval, hair_eval, co)
+                    if step_index == 0:
+                        hair.location = co
 
-        finishParticleHairUpdate()
+        bpy.ops.particle.disconnect_hair()
         return {'FINISHED'}
 
 operators = [ParticleHairFromGuides, SaveParticleHairToMesh, RestoreParticleHairFromMesh]
