@@ -87,6 +87,12 @@ class ParticleHairFromGuides(bpy.types.Operator):
     uniform_bias: bpy.props.FloatVectorProperty(name='Uniform Bias', description='Bias at the roots (tangent, normal)', default=(0.0, 0.0), size=2)
     bias_towards_tip: bpy.props.FloatVectorProperty(name='Bias towards Tip', description='Bias increasing towards the tip (tangent, normal)', default=(0.0, 0.0), size=2)
     couple_root_and_tip: bpy.props.BoolProperty(name='Couple Root & Tip', description='Couples the randomness at the root and the tip', default=False)
+
+    # added: checkboxes for no tip randomness and fill volume
+    no_tip_rand: bpy.props.BoolProperty(name='No Tip Rand', description='Disables Randomness at the last vertex', default=False)
+    fill_volume: bpy.props.BoolProperty(name='Fill Volume', description='Fill the volume with hairs', default=False)
+    # until here
+
     rand_seed: bpy.props.IntProperty(name='Rand Seed', description='Increase to get a different result', default=0)
 
     def execute(self, context):
@@ -167,6 +173,17 @@ class ParticleHairFromGuides(bpy.types.Operator):
             mesh = bmesh.new()
             mesh.from_object(src_obj, depsgraph, deform=True, cage=False, face_normals=True)
             mesh.transform(inverse_transform@src_obj.matrix_world)
+
+            # added: defining important variables and counting guide hairs
+            average_loop_positions = []
+            current_guide = 0
+            first_edge_vertex = True
+            guide_count = 0
+            for edge in mesh.edges:
+                if edge.seam and len(edge.link_loops) == 1:
+                    guide_count += 1
+            # until here
+
             for edge in mesh.edges:
                 if edge.seam and len(edge.link_loops) == 1:
                     loop = edge.link_loops[0]
@@ -175,6 +192,15 @@ class ParticleHairFromGuides(bpy.types.Operator):
                     position = (side_A+side_B)*0.5
                     step = (0, position, side_B-side_A, Vector(loop.face.normal))
                     steps = [step]
+
+                    # added: append (if first vertex of guide hair) or add the fraction of that vert's position
+                    if first_edge_vertex:
+                        average_loop_positions.append(position / guide_count)
+                    else:
+                        average_loop_positions[current_guide] += (position / guide_count)
+                    current_guide += 1
+                    # until here
+
                     strand_hairs = max(1, round((side_A-side_B).length/self.spacing))
                     hair_count += strand_hairs
                     strands.append((strand_hairs, steps))
@@ -185,14 +211,31 @@ class ParticleHairFromGuides(bpy.types.Operator):
                         position = (side_A+side_B)*0.5
                         step = (step[0]+(position-step[1]).length, position, side_B-side_A, Vector(loop.face.normal))
                         steps.append(step)
+
+                        # added: append (if first vertex of guide hair) or add the fraction of that vert's position
+                        if first_edge_vertex:
+                            average_loop_positions.append(position / guide_count)
+                        else:
+                            average_loop_positions[current_guide] += (position / guide_count)
+                        current_guide += 1
+                        # until here
+
                         if len(loop.link_loops) != 1:
                             break
                         loop = loop.link_loops[0]
+
+                    # added: set first_edge_vertex variable to correct value and reset current_guide
+                    if first_edge_vertex:
+                        first_edge_vertex = False
+                    current_guide = 0
+                    # until here
+
                     if hair_steps == None:
                         hair_steps = len(steps)
                     elif hair_steps != len(steps):
                         self.report({'WARNING'}, 'Some strands have a different number of vertices')
                         return {'CANCELLED'}
+
             mesh.free()
 
         if len(tmp_objs) > 0:
@@ -216,6 +259,13 @@ class ParticleHairFromGuides(bpy.types.Operator):
         hair_index = 0
         randomgen = random.Random()
         randomgen.seed(self.rand_seed)
+
+        # added: create fixed random values for each hair, so it doesn't change position throughout the hair
+        loop_ran_values = []
+        for index in range(0, hair_count):
+            loop_ran_values.append(randomgen.random())
+        # until here
+
         for strand in strands:
             strand_hairs = strand[0]
             steps = strand[1]
@@ -246,8 +296,43 @@ class ParticleHairFromGuides(bpy.types.Operator):
                         normal = prev_step[3]+(step[3]-prev_step[3])*coaxial_param
                     vertex = pasy.particles[hair_index].hair_keys[step_index]
                     vertex.co = position+tangent*((index_in_strand+0.5)/strand_hairs-0.5)
-                    vertex.co += tangent.normalized()*(tangent_offset_at_root+(randomgen.random()-0.5)*self.uniform_rand[0]+tangent_rand_towards_tip*length_param)
-                    vertex.co += normal.normalized()*(normal_offset_at_root+(randomgen.random()-0.5)*self.uniform_rand[1]+normal_rand_towards_tip*length_param)
+
+                    # added: calculating interpolated point for shorter hair and setting the actual offset to the hair (and no tip rand implementation)
+                    if self.fill_volume:
+                        if length_factor >= 0.999:
+                            vertex.co += (average_loop_positions[step_index] - vertex.co) * loop_ran_values[hair_index] * loop_ran_values[hair_index]
+                        elif step_index == 0:
+                            vertex.co += (average_loop_positions[0] - vertex.co) * loop_ran_values[hair_index] * loop_ran_values[hair_index]
+                        else:
+                            total_averageline_length = 0
+                            for index in range(0, len(average_loop_positions) - 1):
+                                total_averageline_length += (average_loop_positions[index] - average_loop_positions[index + 1]).magnitude
+                            averageline_length_to_vertex = 0
+                            for index in range(0, step_index):
+                                averageline_length_to_vertex += (average_loop_positions[index] - average_loop_positions[index + 1]).magnitude
+                            relative_length_goal = (averageline_length_to_vertex / total_averageline_length) * length_factor
+                            index_smaller_length = 0
+                            smaller_length = 0
+                            next_step_length = 0
+                            for index in range(0, len(average_loop_positions) - 1):
+                                next_step = (average_loop_positions[index] - average_loop_positions[index + 1]).magnitude
+                                if (smaller_length + next_step) / total_averageline_length >= relative_length_goal:
+                                    next_step_length = next_step
+                                    break
+                                smaller_length += next_step
+                                index_smaller_length += 1
+                            if index_smaller_length < len(average_loop_positions) - 1:
+                                factor = (relative_length_goal - smaller_length / total_averageline_length) / (next_step_length / total_averageline_length)
+                                average_point = average_loop_positions[index_smaller_length].lerp(average_loop_positions[index_smaller_length + 1], factor)
+                                vertex.co += (average_point - vertex.co) * loop_ran_values[hair_index] * loop_ran_values[hair_index]
+                            else:
+                                vertex.co += (average_loop_positions[step_index] - vertex.co) * loop_ran_values[hair_index] * loop_ran_values[hair_index]
+
+                    if (not self.no_tip_rand) | (step_index < hair_steps - 1):
+                    # until here
+
+                        vertex.co += tangent.normalized()*(tangent_offset_at_root+(randomgen.random()-0.5)*self.uniform_rand[0]+tangent_rand_towards_tip*length_param)
+                        vertex.co += normal.normalized()*(normal_offset_at_root+(randomgen.random()-0.5)*self.uniform_rand[1]+normal_rand_towards_tip*length_param)
                 pasy.particles[hair_index].location = pasy.particles[hair_index].hair_keys[0].co
                 hair_index += 1
 
