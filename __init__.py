@@ -2,7 +2,7 @@ bl_info = {
     'name': 'Particle Hair from Guides',
     'author': 'Alexander Meißner',
     'version': (0,0,1),
-    'blender': (2,90,0),
+    'blender': (2,92,0),
     'category': 'Particle',
     'wiki_url': 'https://github.com/lichtso/hair_guides/',
     'tracker_url': 'https://github.com/lichtso/hair_guides/issues',
@@ -60,9 +60,9 @@ def beginParticleHairUpdate(context, dst_obj, hair_steps, hair_count):
     pasy.settings.count = hair_count
     bpy.ops.object.mode_set(mode='PARTICLE_EDIT')
     bpy.ops.object.mode_set(mode='OBJECT')
-    bpy.ops.particle.connect_hair()
+    pamo = dst_obj.modifiers[pamo.name]
+    pasy = pamo.particle_system
     depsgraph = context.evaluated_depsgraph_get()
-    pasy, pamo = getParticleSystem(dst_obj)
     dst_obj_eval = dst_obj.evaluated_get(depsgraph)
     pamo_eval = dst_obj_eval.modifiers[pamo.name]
     pasy_eval = pamo_eval.particle_system
@@ -225,6 +225,9 @@ class ParticleHairFromGuides(bpy.types.Operator):
                 tangent_rand_towards_tip = self.bias_towards_tip[0]+tangent_rand*self.rand_towards_tip[0]
                 normal_rand_towards_tip = self.bias_towards_tip[1]+normal_rand*self.rand_towards_tip[1]
                 length_factor = 1.0-randomgen.random()*self.length_rand
+                hair = pasy.particles[hair_index]
+                hair_eval = pasy_eval.particles[hair_index]
+                hair_index += 1
                 for step_index in range(0, hair_steps):
                     length_param = steps[step_index][0]*length_factor
                     remapped_step_index = bisectLowerBound(0, steps, length_param, 0, hair_steps)
@@ -239,14 +242,12 @@ class ParticleHairFromGuides(bpy.types.Operator):
                         position = prev_step[1]+(step[1]-prev_step[1])*coaxial_param
                         tangent = prev_step[2]+(step[2]-prev_step[2])*coaxial_param
                         normal = prev_step[3]+(step[3]-prev_step[3])*coaxial_param
-                    hair_key = pasy.particles[hair_index].hair_keys[step_index]
                     co = position+tangent*((index_in_strand+0.5)/strand_hairs-0.5)
                     co += tangent.normalized()*(tangent_offset_at_root+(randomgen.random()-0.5)*self.uniform_rand[0]+tangent_rand_towards_tip*length_param)
                     co += normal.normalized()*(normal_offset_at_root+(randomgen.random()-0.5)*self.uniform_rand[1]+normal_rand_towards_tip*length_param)
-                    hair_key.co_object_set(dst_obj_eval, pamo_eval, pasy_eval.particles[hair_index], co)
+                    hair.hair_keys[step_index].co_object_set(dst_obj_eval, pamo_eval, hair_eval, co)
                     if step_index == 0:
-                        pasy.particles[hair_index].location = co
-                hair_index += 1
+                        hair.location = co
 
         bpy.ops.particle.disconnect_hair()
         return {'FINISHED'}
