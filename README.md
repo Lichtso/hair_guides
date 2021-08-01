@@ -1,5 +1,5 @@
 # Particle Hair Guides
-An add-on for [Blender 3D](https://www.blender.org/) 2.79, 2.83 and 2.91 to generate randomized particle hair form meshes, curves and nurbs.
+An add-on for [Blender 3D](https://www.blender.org/) 2.79, 2.83 and 2.92 to generate randomized particle hair form meshes, curves and nurbs.
 Please select the git branch according to your Blender version.
 
 ## Usage
