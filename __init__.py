@@ -171,7 +171,7 @@ class ParticleHairFromGuides(bpy.types.Operator):
             else:
                 continue
             mesh = bmesh.new()
-            mesh.from_object(src_obj, depsgraph, deform=True, cage=False, face_normals=True)
+            mesh.from_object(src_obj, depsgraph, cage=False, face_normals=True)
             mesh.transform(inverse_transform@src_obj.matrix_world)
 
             # added: defining important variables and counting guide hairs
