@@ -1,5 +1,5 @@
 # Particle Hair Guides
-An add-on for [Blender 3D](https://www.blender.org/) 2.79, 2.83 and 2.92 to generate randomized particle hair form meshes, curves and nurbs.
+An add-on for [Blender 3D](https://www.blender.org/) 2.79, 2.83, 2.92 and 3.0 to generate randomized particle hair form meshes, curves and nurbs.
 Please select the git branch according to your Blender version.
 
 ## Usage
@@ -13,5 +13,5 @@ Please select the git branch according to your Blender version.
 - 3. Select this source mesh and then additionally select the target object (particle emitter) so it becomes active.
 - 4. Add to or select an existing a particle system in the emitter object.
 - 5. Make sure the particle system settings are set to type "Hair" (not "Emitter").
-- 6. In the 3D view go to "Object" > "Hair Guides" > "Particle Hair from Guides" and apply the operator.
+- 6. In the 3D view, search "Particle Hair from Guides" and apply the operator.
 - 7. Tweak the operators options.

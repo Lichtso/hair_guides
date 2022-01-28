@@ -2,7 +2,7 @@ bl_info = {
     'name': 'Particle Hair from Guides',
     'author': 'Alexander Meißner',
     'version': (0,0,1),
-    'blender': (2,92,0),
+    'blender': (3,0,0),
     'category': 'Particle',
     'wiki_url': 'https://github.com/lichtso/hair_guides/',
     'tracker_url': 'https://github.com/lichtso/hair_guides/issues',
@@ -160,7 +160,7 @@ class ParticleHairFromGuides(bpy.types.Operator):
             else:
                 continue
             mesh = bmesh.new()
-            mesh.from_object(src_obj, depsgraph, deform=True, cage=False, face_normals=True)
+            mesh.from_object(src_obj, depsgraph, cage=False, face_normals=True)
             mesh.transform(inverse_transform@src_obj.matrix_world)
             for edge in mesh.edges:
                 if edge.seam and len(edge.link_loops) == 1:
