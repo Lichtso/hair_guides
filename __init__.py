@@ -53,17 +53,18 @@ def getParticleSystem(obj):
     return (pasy, pamo)
 
 def beginParticleHairUpdate(context, dst_obj, hair_steps, hair_count):
+    depsgraph = context.evaluated_depsgraph_get()
+    dst_obj_eval = dst_obj.evaluated_get(depsgraph)
     pasy, pamo = getParticleSystem(dst_obj)
     pamo.show_viewport = True
+    pasy.settings.type = 'HAIR'
+    context.tool_settings.particle_edit.type = 'PARTICLES'
+    bpy.ops.particle.disconnect_hair()
     bpy.ops.particle.edited_clear()
     pasy.settings.hair_step = hair_steps-1
     pasy.settings.count = hair_count
     bpy.ops.object.mode_set(mode='PARTICLE_EDIT')
-    bpy.ops.object.mode_set(mode='OBJECT')
     pamo = dst_obj.modifiers[pamo.name]
-    pasy = pamo.particle_system
-    depsgraph = context.evaluated_depsgraph_get()
-    dst_obj_eval = dst_obj.evaluated_get(depsgraph)
     pamo_eval = dst_obj_eval.modifiers[pamo.name]
     pasy_eval = pamo_eval.particle_system
     return (pasy, dst_obj_eval, pamo_eval, pasy_eval)
@@ -140,7 +141,7 @@ class ParticleHairFromGuides(bpy.types.Operator):
                 src_obj.select_set(True)
                 bpy.context.view_layer.objects.active = src_obj
                 bpy.ops.object.convert(target='MESH', keep_original=True)
-                src_obj.hide_viewport = True
+                src_obj.hide_set(True)
                 src_obj = context.object
                 tmp_objs.append(src_obj)
                 for src_modifier in src_modifiers:
@@ -156,7 +157,7 @@ class ParticleHairFromGuides(bpy.types.Operator):
                 bpy.ops.mesh.select_all(action='DESELECT')
                 bpy.ops.object.mode_set(mode='OBJECT')
             elif src_obj.type == 'MESH':
-                src_obj.hide_viewport = True
+                src_obj.hide_set(True)
             else:
                 continue
             mesh = bmesh.new()
@@ -249,6 +250,7 @@ class ParticleHairFromGuides(bpy.types.Operator):
                     if step_index == 0:
                         hair.location = co
 
+        bpy.ops.object.mode_set(mode='OBJECT')
         bpy.ops.particle.disconnect_hair()
         return {'FINISHED'}
 
@@ -354,12 +356,8 @@ class RestoreParticleHairFromMesh(bpy.types.Operator):
                     hair.hair_keys[step_index].co_object_set(dst_obj_eval, pamo_eval, hair_eval, co)
                     if step_index == 0:
                         hair.location = co
-                # for step_index in range(len(loop), max_hair_steps):
-                    # hair.hair_keys[step_index].select_set(True)
 
-        # bpy.ops.object.mode_set(mode='PARTICLE_EDIT')
-        # bpy.ops.particle.delete(type='KEY')
-        # bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.mode_set(mode='OBJECT')
         bpy.ops.particle.disconnect_hair()
         return {'FINISHED'}
 
