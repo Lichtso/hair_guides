@@ -1,3 +1,6 @@
+Blender 4.0 comes with a rework of the hair workflow, including procedural generation using geometry nodes.
+Thus, there is no more use for this add-on and I am archiving it.
+
 # Particle Hair Guides
 An add-on for [Blender 3D](https://www.blender.org/) 2.79, 2.83, 2.92 and 3.0 to generate randomized particle hair form meshes, curves and nurbs.
 Please select the git branch according to your Blender version.
